@@ -8,11 +8,13 @@ dependencies = [
     "aiohttp",
     "arxiv",
     "beautifulsoup4",
+    "datasets>=4.5.0",
     "fastapi",
     "gradio",
     "langchain",
     "langchain-text-splitters",
     "openai",
+    "pyarrow>=21.0.0",
     "python-dotenv",
     "qdrant-client",
     "rank-bm25",
@@ -22,5 +24,17 @@ dependencies = [
     "uvicorn",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest",
+]
+evals = [
+    "langfuse",
+]
+
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+testpaths = ["evals/tests"]
+pythonpath = ["."]

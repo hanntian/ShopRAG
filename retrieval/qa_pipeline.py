@@ -1,12 +1,11 @@
 import json
 import os
-import sys
 from pathlib import Path
 
 import requests
 
 from retrieval.chunking import chunk_documents
-from retrieval.qdrant_store import QdrantVectorStore
+from retrieval.hybrid import HybridRetriever
 
 
 DEFAULT_DOCUMENTS_PATH = Path(__file__).resolve().parents[1] / "data" / "raw_documents.jsonl"
@@ -24,31 +23,35 @@ class QAPipeline:
         self.documents_path = Path(documents_path)
         self.model = model
         self.base_url = base_url
-        self._store = None
+        self._retriever: HybridRetriever | None = None
 
     @property
-    def store(self) -> QdrantVectorStore:
-        if self._store is None:
-            self._store = QdrantVectorStore()
-        return self._store
+    def retriever(self) -> HybridRetriever:
+        # Lazy init so constructing QAPipeline does not eagerly connect to
+        # Qdrant or load the embedding model.
+        if self._retriever is None:
+            self._retriever = HybridRetriever()
+        return self._retriever
 
     def load_documents(self) -> list[dict]:
         with self.documents_path.open(encoding="utf-8") as file:
             return [json.loads(line) for line in file if line.strip()]
 
     def build_chunks(self, documents: list[dict] | None = None) -> list[dict]:
-        # source_id / chunk_id / chunk_index 由 chunking.chunk_documents 在切分时一次性生成
+        # source_id / chunk_id / chunk_index are assigned by chunk_documents in one pass.
         if documents is None:
             documents = self.load_documents()
         return chunk_documents(documents)
 
     def index_documents(self, documents: list[dict] | None = None) -> list[dict]:
+        # HybridRetriever.upsert_chunks fans out to BM25 (in-memory) and Qdrant (remote).
         chunks = self.build_chunks(documents)
-        self.store.upsert_chunks(chunks)
+        self.retriever.upsert_chunks(chunks)
         return chunks
 
     def retrieve(self, query: str, k: int = 5) -> list[dict]:
-        return self.store.top_k_retrieve(query, k=k)
+        # Hybrid path: BM25 + vector each return candidate_n hits, RRF fuses, take top-k.
+        return self.retriever.top_k_retrieve(query, k=k)
 
     def build_context(self, retrieved_chunks: list[dict]) -> str:
         context_blocks = []
@@ -99,7 +102,10 @@ class QAPipeline:
         )
 
     def ask(self, query: str, k: int = 5) -> dict:
-        self.index_documents()
+        # Index once on first ask; later calls reuse the in-memory BM25 corpus.
+        if len(self.retriever.bm25) == 0:
+            self.index_documents()
+
         retrieved_chunks = self.retrieve(query, k=k)
         answer = self.synthesize_answer(query, retrieved_chunks)
 
