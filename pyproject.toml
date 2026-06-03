@@ -18,6 +18,7 @@ dependencies = [
     "python-dotenv",
     "qdrant-client",
     "rank-bm25",
+    "redis>=5.0",
     "requests",
     "sentence-transformers",
     "tqdm",
