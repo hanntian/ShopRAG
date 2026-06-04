@@ -1,3 +1,3 @@
-# DeepResearch Stack
+# ShopRAG
 
-Observable Retrieval System for ML Research and Technical Knowledge.
+An e-commerce RAG for experimenting with chunking, reranking, and query strategies on product retrieval performance.
